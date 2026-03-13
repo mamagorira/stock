@@ -451,13 +451,109 @@ window.addToAlexa = function(itemName) {
   }
   // AmazonのAlexaリストページを開く
   setTimeout(function() {
-    window.open('https://www.amazon.co.jp/alexahousehold/todo?listId=shopping', '_blank');
+    window.open('https://alexa.amazon.co.jp/spa/index.html#shopping-list', '_blank');
   }, 500);
 };
 
 // =========================================
-// 音声入力
+// 買い物リスト：音声 & 手動追加
 // =========================================
+let slRecognition = null;
+let slListening   = false;
+
+window.toggleShoppingVoice = function() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { alert('お使いのブラウザは音声入力に対応していません。\nChrome または Safari をお使いください。'); return; }
+  if (slListening) { if (slRecognition) slRecognition.stop(); stopShoppingVoice(); }
+  else { slRecognition = initShoppingVoice(); if (slRecognition) slRecognition.start(); }
+};
+
+function initShoppingVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  const r = new SR();
+  r.lang = 'ja-JP';
+  r.interimResults = true;
+  r.maxAlternatives = 1;
+
+  r.onstart = function() {
+    slListening = true;
+    const btn  = document.getElementById('sl-voice-btn');
+    const icon = document.getElementById('sl-voice-icon');
+    const lbl  = document.getElementById('sl-voice-label');
+    const hint = document.getElementById('sl-voice-hint');
+    if (btn)  btn.classList.add('listening');
+    if (icon) icon.textContent = '🔴';
+    if (lbl)  lbl.textContent  = '聞いています…';
+    if (hint) hint.textContent = '買いたいものを話してください。複数でもOK！';
+  };
+
+  r.onresult = function(e) {
+    let t = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) t += e.results[i][0].transcript;
+    const input = document.getElementById('sl-manual-input');
+    if (input) input.value = t;
+    // 確定したら自動追加
+    if (e.results[e.results.length - 1].isFinal) {
+      addShoppingByVoice(t);
+    }
+  };
+
+  r.onerror = function(e) {
+    const hint = document.getElementById('sl-voice-hint');
+    if (e.error === 'not-allowed') { if (hint) hint.textContent = '⚠️ マイクのアクセスが拒否されました。'; }
+    else if (e.error === 'no-speech') { if (hint) hint.textContent = '声が聞こえませんでした。もう一度試してください。'; }
+    stopShoppingVoice();
+  };
+
+  r.onend = function() { stopShoppingVoice(); };
+  return r;
+}
+
+function stopShoppingVoice() {
+  slListening = false;
+  const btn  = document.getElementById('sl-voice-btn');
+  const icon = document.getElementById('sl-voice-icon');
+  const lbl  = document.getElementById('sl-voice-label');
+  if (btn)  btn.classList.remove('listening');
+  if (icon) icon.textContent = '🎤';
+  if (lbl)  lbl.textContent  = 'タップして話す';
+}
+
+function addShoppingByVoice(text) {
+  if (!text.trim()) return;
+  // 「と」「、」「，」などで区切って複数追加に対応
+  const names = text.split(/[とや、，,\s]+/).map(s => s.trim()).filter(s => s.length > 0);
+  names.forEach(function(name) {
+    addShoppingItem(name, 'その他');
+  });
+  const hint = document.getElementById('sl-voice-hint');
+  const input = document.getElementById('sl-manual-input');
+  if (hint)  hint.textContent = '✓ 「' + text + '」を追加しました！';
+  if (input) input.value = '';
+  setTimeout(function() {
+    if (hint) hint.textContent = '「牛乳」「卵」など買いたいものを話してください';
+  }, 3000);
+}
+
+window.addShoppingManual = function() {
+  const input = document.getElementById('sl-manual-input');
+  if (!input || !input.value.trim()) return;
+  addShoppingItem(input.value.trim(), 'その他');
+  showToast('「' + input.value.trim() + '」を追加しました ✓');
+  input.value = '';
+};
+
+function addShoppingItem(name, category) {
+  // すでにリストにあれば追加しない
+  if (shopping.find(s => s.name === name && !s.bought)) return;
+  shopping.push({ id: 'manual_' + Date.now() + '_' + Math.random(), name: name, category: category, bought: false });
+  saveShoppingArr();
+  renderShopping();
+  renderStats();
+}
+
+
 let recognition = null;
 let isListening  = false;
 
@@ -712,6 +808,21 @@ select.form-input { cursor: pointer; }
         <button class="btn btn-danger" onclick="clearAll()">全クリア</button>
       </div>
     </div>
+
+    <!-- 音声 & 手動追加エリア -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">リストに追加</div>
+      <button class="voice-btn" id="sl-voice-btn" onclick="toggleShoppingVoice()" style="margin-bottom:10px;">
+        <span id="sl-voice-icon">🎤</span><span id="sl-voice-label">タップして話す</span>
+      </button>
+      <div id="sl-voice-hint" style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:12px;line-height:1.6;">「牛乳」「卵」など買いたいものを話してください</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" class="form-input" id="sl-manual-input" placeholder="手動で入力して追加..." style="flex:1;"
+          onkeydown="if(event.key==='Enter')addShoppingManual()">
+        <button class="btn btn-primary" onclick="addShoppingManual()" style="flex-shrink:0;">追加</button>
+      </div>
+    </div>
+
     <div class="shopping-list" id="shopping-list"></div>
   </div>
 </main>
