@@ -438,19 +438,21 @@ window.sendEmail = function() {
 // Alexa連携
 // =========================================
 window.addToAlexa = function(itemName) {
-  const alexaUrl = 'alexa://alexa/shopping-list/add?itemName=' + encodeURIComponent(itemName);
-  const fallbackTimer = setTimeout(function() {
-    const webUrl = 'https://www.amazon.co.jp/alexahousehold/todo?ref=sl_shl_alexa_shoplist&listId=shopping';
-    if (confirm('Alexaアプリが見つかりませんでした。\nAmazonの買い物リストページを開きますか？')) {
-      window.open(webUrl, '_blank');
-    }
-  }, 2000);
-  window.location.href = alexaUrl;
-  window.addEventListener('blur', function onBlur() {
-    clearTimeout(fallbackTimer);
-    window.removeEventListener('blur', onBlur);
-  }, { once: true });
-  showToast(itemName + ' をAlexaリストに追加しています…');
+  // 商品名をクリップボードにコピー
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(itemName).then(function() {
+      showToast('「' + itemName + '」をコピーしました ✓');
+    }).catch(function() {
+      showToast(itemName + ' をAlexaリストに追加してください');
+    });
+  } else {
+    // クリップボードが使えない場合
+    showToast(itemName + ' をAlexaリストに追加してください');
+  }
+  // AmazonのAlexaリストページを開く
+  setTimeout(function() {
+    window.open('https://www.amazon.co.jp/alexahousehold/todo?listId=shopping', '_blank');
+  }, 500);
 };
 
 // =========================================
