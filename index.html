@@ -288,14 +288,19 @@ function renderShopping() {
     list.innerHTML = '<div class="empty-state"><div class="icon">🛒</div><p>買い物リストは空です</p></div>';
     return;
   }
-  list.innerHTML = shopping.map((s, i) =>
+  // 未購入を上、購入済みを下に並び替え
+  const sorted = shopping
+    .map((s, i) => ({ ...s, _idx: i }))
+    .sort((a, b) => a.bought - b.bought);
+
+  list.innerHTML = sorted.map(s =>
     '<div class="shopping-item ' + (s.bought ? 'bought' : '') + '">' +
-    '<div class="shopping-check ' + (s.bought ? 'checked' : '') + '" onclick="toggleBought(' + i + ')">' + (s.bought ? '✓' : '') + '</div>' +
+    '<div class="shopping-check ' + (s.bought ? 'checked' : '') + '" onclick="toggleBought(' + s._idx + ')">' + (s.bought ? '✓' : '') + '</div>' +
     '<div class="shopping-info">' +
     '<div class="shopping-name">' + s.name + '</div>' +
     '<div class="shopping-sub">'  + s.category + '</div>' +
     '</div>' +
-    '<button class="shopping-remove" onclick="removeShoppingItem(' + i + ')">×</button>' +
+    '<button class="shopping-remove" onclick="removeShoppingItem(' + s._idx + ')">×</button>' +
     '</div>'
   ).join('');
   renderShoppingBadge();
