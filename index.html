@@ -95,8 +95,67 @@ function saveShoppingArr() {
 }
 
 // =========================================
-// 献立データ Firebase同期
+// 家族メンバー管理
 // =========================================
+let members = [];
+
+onValue(ref(db, 'members'), function(snap) {
+  const data = snap.val();
+  members = data ? Object.values(data) : [];
+  renderMemberSelect();
+  renderMemberList();
+});
+
+function renderMemberSelect() {
+  const sel = document.getElementById('req-author');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">-- 選択してください --</option>' +
+    members.map(m => '<option value="' + m.name + '"' + (m.name === current ? ' selected' : '') + '>' + m.name + '</option>').join('');
+}
+
+function renderMemberList() {
+  const el = document.getElementById('member-list');
+  if (!el) return;
+  if (members.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:20px;">まだメンバーがいません</div>';
+    return;
+  }
+  el.innerHTML = members.map(m =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">' +
+    '<span style="font-size:14px;font-weight:700;">👤 ' + m.name + '</span>' +
+    '<button onclick="deleteMember(\'' + m.id + '\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;" onmouseover="this.style.color=\'var(--danger)\'" onmouseout="this.style.color=\'var(--muted)\'">✕</button>' +
+    '</div>'
+  ).join('');
+}
+
+window.openMemberModal = function() {
+  document.getElementById('member-modal').classList.add('open');
+  setTimeout(() => document.getElementById('member-input').focus(), 100);
+};
+window.closeMemberModal = function() {
+  document.getElementById('member-modal').classList.remove('open');
+};
+
+window.addMember = function() {
+  const input = document.getElementById('member-input');
+  const name = input.value.trim();
+  if (!name) return;
+  if (members.find(m => m.name === name)) { alert('同じ名前がすでに登録されています'); return; }
+  const m = { id: 'member_' + Date.now(), name };
+  set(ref(db, 'members/' + m.id), m);
+  input.value = '';
+  showToast(name + ' を追加しました ✓');
+};
+
+window.deleteMember = function(id) {
+  const m = members.find(x => x.id === id);
+  if (!m) return;
+  if (!confirm('「' + m.name + '」を削除しますか？')) return;
+  remove(ref(db, 'members/' + id));
+};
+
+
 let menuRequests = [];
 let menuDecided  = [];
 
@@ -194,7 +253,7 @@ function renderMenu() {
 // 献立モーダル
 // =========================================
 window.openMenuRequestModal = function() {
-  document.getElementById('req-author').value = '';
+  renderMemberSelect();
   document.getElementById('req-dish').value = '';
   document.getElementById('req-date').value = '';
   document.getElementById('req-note').value = '';
@@ -1134,7 +1193,10 @@ select.form-input { cursor: pointer; }
     </div>
     <div class="form-group">
       <label class="form-label">名前</label>
-      <input type="text" class="form-input" id="req-author" placeholder="例: お母さん、太郎">
+      <div style="display:flex;gap:8px;">
+        <select class="form-input" id="req-author" style="flex:1;"></select>
+        <button class="btn btn-ghost" style="flex-shrink:0;font-size:12px;padding:8px 10px;" onclick="openMemberModal()">＋ 追加</button>
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">食べたいもの *</label>
@@ -1173,6 +1235,22 @@ select.form-input { cursor: pointer; }
       <div style="font-size:11px;color:var(--muted);margin-top:6px;">カンマで区切ると複数まとめて追加できます</div>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="submitMenuDecide()">決定して食材をリストに追加</button>
+  </div>
+</div>
+
+<!-- メンバー管理モーダル -->
+<div class="modal-overlay" id="member-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">家族メンバー管理</div>
+      <button class="modal-close" onclick="closeMemberModal()">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <input type="text" class="form-input" id="member-input" placeholder="名前を入力..." style="flex:1;"
+        onkeydown="if(event.key==='Enter')addMember()">
+      <button class="btn btn-primary" onclick="addMember()" style="flex-shrink:0;">追加</button>
+    </div>
+    <div id="member-list"></div>
   </div>
 </div>
 
