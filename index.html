@@ -57,7 +57,7 @@ onValue(ref(db,'items'), snap => {
   if (data) { items = Object.values(data); }
   else { const o={}; INITIAL_ITEMS.forEach(i=>o[i.id]=i); set(ref(db,'items'),o); items=INITIAL_ITEMS; }
   fbReady = true;
-  if (!checkQRParam()) renderInventory();
+  if (!checkQRParam()) window.renderInventory();
 });
 onValue(ref(db,'shopping'), snap => {
   shopping = snap.val() ? Object.values(snap.val()) : [];
@@ -148,10 +148,34 @@ function renderScanPage(item) {
 // =========================================
 // 在庫一覧
 // =========================================
-function renderInventory() {
+// アクティブフィルター
+let activeFilter = 'all';
+window.setFilter = function(filter) {
+  activeFilter = activeFilter === filter ? 'all' : filter; // 同じを押したら解除
+  // 買い物リストフィルターは買い物タブへ
+  if (filter === 'shopping') {
+    activeFilter = 'all';
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.querySelector('[onclick*="showTab(\'shopping\'"]')?.classList.add('active');
+    document.getElementById('page-shopping').classList.add('active');
+    renderShopping();
+    return;
+  }
+  window.renderInventory();
+  renderStats();
+};
+
+window.renderInventory = function renderInventory() {
   if (!fbReady) return;
   const q=(document.getElementById('search-input')?.value||'').trim().toLowerCase();
-  const filtered = q ? items.filter(i=>i.name.toLowerCase().includes(q)||i.category.toLowerCase().includes(q)) : items;
+  let filtered = items;
+  // テキスト検索
+  if (q) filtered = filtered.filter(i=>i.name.toLowerCase().includes(q)||i.category.toLowerCase().includes(q));
+  // ステータスフィルター
+  if (activeFilter === 'low')  filtered = filtered.filter(i=>i.stock>0&&i.stock<=i.low_threshold);
+  if (activeFilter === 'out')  filtered = filtered.filter(i=>i.stock===0);
+
   let html='';
   filtered.forEach(item=>{
     const s=getStatus(item);
@@ -179,7 +203,7 @@ function renderInventory() {
       '<button class="card-btn '+(inList?'in-list':'')+'" onclick="toggleShopping(\''+sid+'\')">'+(inList?'✓ リスト済':'🛒 リストへ')+'</button>'+
       '</div></div>';
   });
-  document.getElementById('items-grid').innerHTML = html||'<div class="empty-state"><div class="icon">📦</div><p>商品がありません</p></div>';
+  document.getElementById('items-grid').innerHTML = html||'<div class="empty-state"><div class="icon">📦</div><p>該当する商品がありません</p></div>';
   renderStats(); renderShoppingBadge();
 }
 
@@ -189,11 +213,12 @@ function renderStats() {
   const lst=shopping.filter(s=>!s.bought).length;
   const el=document.getElementById('stats-row');
   if(!el)return;
+  const active = (key) => activeFilter===key ? 'box-shadow:0 0 0 2px var(--accent);' : '';
   el.innerHTML=
-    '<div class="stat-box"><div class="stat-num c-accent">'+items.length+'</div><div class="stat-label">全商品</div></div>'+
-    '<div class="stat-box"><div class="stat-num c-warn">'+low+'</div><div class="stat-label">残りわずか</div></div>'+
-    '<div class="stat-box"><div class="stat-num c-danger">'+out+'</div><div class="stat-label">在庫切れ</div></div>'+
-    '<div class="stat-box"><div class="stat-num c-blue">'+lst+'</div><div class="stat-label">買い物リスト</div></div>';
+    '<div class="stat-box" onclick="setFilter(\'all\')" style="cursor:pointer;'+active('all')+'"><div class="stat-num c-accent">'+items.length+'</div><div class="stat-label">全商品</div></div>'+
+    '<div class="stat-box" onclick="setFilter(\'low\')" style="cursor:pointer;'+active('low')+'"><div class="stat-num c-warn">'+low+'</div><div class="stat-label">残りわずか</div></div>'+
+    '<div class="stat-box" onclick="setFilter(\'out\')" style="cursor:pointer;'+active('out')+'"><div class="stat-num c-danger">'+out+'</div><div class="stat-label">在庫切れ</div></div>'+
+    '<div class="stat-box" onclick="setFilter(\'shopping\')" style="cursor:pointer;"><div class="stat-num c-blue">'+lst+'</div><div class="stat-label">買い物リスト</div></div>';
 }
 
 // =========================================
@@ -217,7 +242,7 @@ window.toggleShopping = id=>{
     shopping.push({id,name:item.name,category:item.category,bought:false,qty:1});
     showToast(item.name+' を買い物リストに追加しました ✓');
   }
-  saveShoppingArr(); renderInventory();
+  saveShoppingArr(); window.renderInventory();
 };
 window.renameItem = id=>{
   const item=items.find(i=>i.id===id); if(!item)return;
