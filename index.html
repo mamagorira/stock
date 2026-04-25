@@ -9,6 +9,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getStorage, ref as sref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDAsSzWrA52xl_yRQ0QxtaBZ43RxV03Pnw",
@@ -23,6 +24,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db      = getDatabase(app);
 const storage = getStorage(app);
+const auth    = getAuth(app);
 
 // =========================================
 // 初期データ
@@ -51,7 +53,8 @@ let menuRequests = [];
 let menuDecided  = [];
 let fbReady      = false;
 
-// Firebase同期
+// Firebase同期（認証後に開始）
+function initListeners() {
 onValue(ref(db,'items'), snap => {
   const data = snap.val();
   if (data) { items = Object.values(data); }
@@ -78,6 +81,23 @@ onValue(ref(db,'menu_requests'), snap => {
 onValue(ref(db,'menu_decided'), snap => {
   menuDecided = snap.val() ? Object.values(snap.val()) : [];
   if (document.getElementById('page-menu')?.classList.contains('active')) renderMenu();
+});
+onValue(ref(db,'consumption'), snap => {
+  consumptionHistory = snap.val() || {};
+  if(document.getElementById('page-analytics')?.classList.contains('active')) window.renderAnalytics();
+});
+}
+
+// 匿名認証してからアプリ起動
+onAuthStateChanged(auth, user => {
+  if (user) {
+    initListeners();
+  } else {
+    signInAnonymously(auth).catch(() => {
+      document.getElementById('items-grid').innerHTML =
+        '<div class="empty-state"><div class="icon">🔒</div><p>認証に失敗しました<br><span style="font-size:12px;">ページを再読み込みしてください</span></p></div>';
+    });
+  }
 });
 
 // Firebase保存ヘルパー
@@ -241,11 +261,6 @@ window.changeStock = (id,delta)=>{
 // 消費履歴・予測
 // =========================================
 let consumptionHistory = {}; // { itemId: [{date, qty}, ...] }
-
-onValue(ref(db,'consumption'), snap => {
-  consumptionHistory = snap.val() || {};
-  if(document.getElementById('page-analytics')?.classList.contains('active')) window.renderAnalytics();
-});
 
 function recordConsumption(itemId, qty) {
   const record = { date: Date.now(), qty };
@@ -703,9 +718,8 @@ window.closeMenuRequestModal=()=>document.getElementById('menu-request-modal').c
 window.submitMenuRequest=()=>{
   const dish=document.getElementById('req-dish').value.trim();
   if(!dish){alert('食べたいものを入力してください');return;}
-  const id='req_'+Date.now();
-  set(ref(db,'menu_requests/'+id),{
-    id, dish,
+  set(ref(db,'menu_requests/req_'+Date.now()),{
+    id:'req_'+Date.now(), dish,
     author:document.getElementById('req-author').value,
     date:document.getElementById('req-date').value.trim(),
     note:document.getElementById('req-note').value.trim()
@@ -726,9 +740,8 @@ window.submitMenuDecide=()=>{
   if(!dish){alert('料理名を入力してください');return;}
   const ingredientStr=document.getElementById('decide-ingredients').value.trim();
   const ingredients=ingredientStr?ingredientStr.split(/[,，、]/).map(s=>s.trim()).filter(s=>s):[];
-  const id='decided_'+Date.now();
-  set(ref(db,'menu_decided/'+id),{
-    id, dish,
+  set(ref(db,'menu_decided/decided_'+Date.now()),{
+    id:'decided_'+Date.now(), dish,
     date:document.getElementById('decide-date').value.trim(),
     ingredients
   });
