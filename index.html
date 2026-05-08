@@ -718,8 +718,9 @@ window.closeMenuRequestModal=()=>document.getElementById('menu-request-modal').c
 window.submitMenuRequest=()=>{
   const dish=document.getElementById('req-dish').value.trim();
   if(!dish){alert('食べたいものを入力してください');return;}
-  set(ref(db,'menu_requests/req_'+Date.now()),{
-    id:'req_'+Date.now(), dish,
+  const id='req_'+Date.now();
+  set(ref(db,'menu_requests/'+id),{
+    id, dish,
     author:document.getElementById('req-author').value,
     date:document.getElementById('req-date').value.trim(),
     note:document.getElementById('req-note').value.trim()
@@ -740,8 +741,9 @@ window.submitMenuDecide=()=>{
   if(!dish){alert('料理名を入力してください');return;}
   const ingredientStr=document.getElementById('decide-ingredients').value.trim();
   const ingredients=ingredientStr?ingredientStr.split(/[,，、]/).map(s=>s.trim()).filter(s=>s):[];
-  set(ref(db,'menu_decided/decided_'+Date.now()),{
-    id:'decided_'+Date.now(), dish,
+  const id='decided_'+Date.now();
+  set(ref(db,'menu_decided/'+id),{
+    id, dish,
     date:document.getElementById('decide-date').value.trim(),
     ingredients
   });
