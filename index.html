@@ -759,6 +759,121 @@ window.deleteMenuRequest=id=>remove(ref(db,'menu_requests/'+id));
 window.deleteMenuDecided=id=>remove(ref(db,'menu_decided/'+id));
 
 // =========================================
+// AI献立提案
+// =========================================
+let aiMenuApiKey = '';
+
+window.openAiMenuModal = () => {
+  document.getElementById('ai-menu-results').innerHTML = '';
+  document.getElementById('ai-menu-error').style.display = 'none';
+  document.getElementById('ai-menu-loading').style.display = 'none';
+  document.getElementById('ai-menu-submit-btn').style.display = 'block';
+  document.getElementById('ai-menu-submit-btn').textContent = '提案してもらう';
+  document.getElementById('ai-menu-key-section').style.display = aiMenuApiKey ? 'none' : 'block';
+  document.getElementById('ai-menu-modal').classList.add('open');
+};
+window.closeAiMenuModal = () => document.getElementById('ai-menu-modal').classList.remove('open');
+
+window.requestAiMenuSuggestions = async () => {
+  const keyInput = document.getElementById('ai-api-key').value.trim();
+  if (keyInput) aiMenuApiKey = keyInput;
+  const errorEl = document.getElementById('ai-menu-error');
+  if (!aiMenuApiKey) {
+    errorEl.style.display = 'block';
+    errorEl.textContent = 'APIキーを入力してください';
+    return;
+  }
+
+  const loadingEl = document.getElementById('ai-menu-loading');
+  const resultsEl = document.getElementById('ai-menu-results');
+  const submitBtn = document.getElementById('ai-menu-submit-btn');
+
+  errorEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+  loadingEl.style.display = 'block';
+  submitBtn.style.display = 'none';
+
+  const stockSummary = items
+    .filter(i => i.category === '食品・キッチン' || i.stock <= (i.low_threshold || 1))
+    .map(i => i.name + '(残り' + i.stock + ')')
+    .join('、') || 'なし';
+  const requestSummary = menuRequests.map(r => r.dish + (r.author ? '（' + r.author + '希望）' : '')).join('、') || 'なし';
+  const recentSummary = menuDecided.slice(-7).map(d => d.dish).join('、') || 'なし';
+
+  const prompt = '以下の情報をもとに、家庭の献立を3つ提案してください。\n\n' +
+    '【在庫が少ない・関連する食材】\n' + stockSummary + '\n\n' +
+    '【家族からのリクエスト】\n' + requestSummary + '\n\n' +
+    '【直近決定した献立（被らないように）】\n' + recentSummary + '\n\n' +
+    '出力は必ず次のJSON配列の形式のみで、説明文やコードブロック記号は付けないでください。\n' +
+    '[{"dish":"料理名","reason":"30文字程度のおすすめ理由","ingredients":["材料1","材料2"]}]';
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': aiMenuApiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => null);
+      if (response.status === 401) throw new Error('APIキーが正しくありません。確認して再入力してください。');
+      throw new Error(errBody?.error?.message || ('エラーが発生しました（status ' + response.status + '）'));
+    }
+
+    const data = await response.json();
+    const text = data.content.map(b => b.text || '').join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    const suggestions = JSON.parse(clean);
+
+    loadingEl.style.display = 'none';
+    document.getElementById('ai-menu-key-section').style.display = 'none';
+
+    resultsEl.innerHTML = suggestions.map(s => {
+      const ingStr = (s.ingredients || []).join('、');
+      const safe = JSON.stringify(s).replace(/"/g, '&quot;');
+      return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">' +
+        '<div style="font-weight:700;font-size:15px;margin-bottom:4px;">' + s.dish + '</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.6;">' + (s.reason || '') + '</div>' +
+        (ingStr ? '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">🛒 ' + ingStr + '</div>' : '') +
+        '<button class="card-btn" style="width:100%;justify-content:center;" onclick=\'pickAiMenuSuggestion(' + safe + ')\'>この献立に決定する</button>' +
+        '</div>';
+    }).join('');
+
+    submitBtn.textContent = '🔄 もう一度提案してもらう';
+    submitBtn.style.display = 'block';
+
+  } catch (err) {
+    loadingEl.style.display = 'none';
+    submitBtn.style.display = 'block';
+    errorEl.style.display = 'block';
+    errorEl.textContent = err.message || '通信エラーが発生しました';
+  }
+};
+
+window.pickAiMenuSuggestion = (s) => {
+  const id = 'decided_' + Date.now();
+  set(ref(db, 'menu_decided/' + id), { id, dish: s.dish, date: '', ingredients: s.ingredients || [] });
+  (s.ingredients || []).forEach(name => {
+    if (!shopping.find(x => x.name === name && !x.bought)) {
+      shopping.push({ id: 'manual_' + Date.now() + '_' + Math.random(), name, category: '食品・キッチン', bought: false, qty: 1 });
+    }
+  });
+  if ((s.ingredients || []).length) saveShoppingArr();
+  showToast('「' + s.dish + '」を献立に決定しました ✓');
+  closeAiMenuModal();
+};
+
+
+// =========================================
 // 音声入力（商品追加用）
 // =========================================
 let recognition=null, isListening=false;
@@ -1101,10 +1216,9 @@ select.form-input{cursor:pointer;}
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <div style="font-size:13px;font-weight:700;">🤖 AIに献立を提案してもらう</div>
-        <span style="font-size:10px;background:#2a2a1a;color:var(--warn);padding:2px 8px;border-radius:20px;font-weight:700;">近日対応予定</span>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7;">在庫状況・リクエストをもとにAIが献立を提案します。</div>
-      <button class="btn btn-ghost" style="width:100%;justify-content:center;opacity:0.5;" disabled>✨ AIに提案してもらう</button>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openAiMenuModal()">✨ AIに提案してもらう</button>
     </div>
     <div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;">家族のリクエスト</div>
     <div id="menu-requests"></div>
@@ -1229,6 +1343,35 @@ select.form-input{cursor:pointer;}
       <div style="font-size:11px;color:var(--muted);margin-top:6px;">カンマ・読点で区切ると複数追加できます</div>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="submitMenuDecide()">決定して食材をリストに追加</button>
+  </div>
+</div>
+
+<!-- AI献立提案モーダル -->
+<div class="modal-overlay" id="ai-menu-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">✨ AIに献立を提案してもらう</div>
+      <button class="modal-close" onclick="closeAiMenuModal()">✕</button>
+    </div>
+
+    <div id="ai-menu-key-section">
+      <div class="form-group">
+        <label class="form-label">Claude APIキー</label>
+        <input type="password" class="form-input" id="ai-api-key" placeholder="sk-ant-...">
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6;">このブラウザのメモリ内にのみ保持され、保存・送信先以外には残りません。ページを閉じると消えます。</div>
+      </div>
+    </div>
+
+    <div id="ai-menu-loading" style="display:none;text-align:center;padding:30px 0;">
+      <div style="font-size:32px;margin-bottom:12px;">🤔</div>
+      <div style="font-size:13px;color:var(--muted);">在庫とリクエストを見て考えています…</div>
+    </div>
+
+    <div id="ai-menu-error" style="display:none;color:#ff6b6b;font-size:12px;margin-bottom:12px;line-height:1.6;"></div>
+
+    <div id="ai-menu-results"></div>
+
+    <button class="btn btn-primary" style="width:100%;justify-content:center;" id="ai-menu-submit-btn" onclick="requestAiMenuSuggestions()">提案してもらう</button>
   </div>
 </div>
 
