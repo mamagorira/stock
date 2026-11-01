@@ -715,6 +715,23 @@ window.openMenuRequestModal=()=>{
   setTimeout(()=>document.getElementById('req-dish').focus(),100);
 };
 window.closeMenuRequestModal=()=>document.getElementById('menu-request-modal').classList.remove('open');
+// スマホ通知（ntfy）：リクエストが来たら通知する
+const NTFY_TOPIC = 'stock-plaa984ulbcy77z3'; // ← ntfyアプリで同じ名前を登録
+function notifyMenuRequest(dish, author, date, note){
+  const parts=[];
+  if(date) parts.push('希望日: '+date);
+  if(note) parts.push('メモ: '+note);
+  fetch('https://ntfy.sh/',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      topic:NTFY_TOPIC,
+      title:'🍽 献立リクエスト' + (author ? '（'+author+'）' : ''),
+      message:dish + (parts.length ? '\n'+parts.join(' / ') : ''),
+      tags:['fork_and_knife']
+    })
+  }).catch(()=>{}); // 通知に失敗してもリクエスト自体は成功扱い
+}
 window.submitMenuRequest=()=>{
   const dish=document.getElementById('req-dish').value.trim();
   if(!dish){alert('食べたいものを入力してください');return;}
@@ -725,6 +742,7 @@ window.submitMenuRequest=()=>{
     date:document.getElementById('req-date').value.trim(),
     note:document.getElementById('req-note').value.trim()
   });
+  notifyMenuRequest(dish, document.getElementById('req-author').value, document.getElementById('req-date').value.trim(), document.getElementById('req-note').value.trim());
   showToast('「'+dish+'」をリクエストしました ✓'); window.closeMenuRequestModal();
 };
 window.openMenuDecideFromRequest=reqId=>{
